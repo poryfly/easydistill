@@ -20,11 +20,15 @@ import torch
 import logging
 import os
 from jinja2 import Environment, FileSystemLoader
+from pyexpat.errors import messages
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from tqdm import tqdm
 from openai import OpenAI
 import math
+from ..data.loader import get_dataset
+from torch.utils.data import DataLoader
+from ..data.data_utils import write_data_to_json_file
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -46,14 +50,6 @@ def read_json_field(filename, field_name='instruction'):
     except Exception as e:
         logging.error(f"An error occurred: {e}")
 
-
-def write_data_to_json_file(data, file_path):
-    try:
-        with open(file_path, 'w') as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
-        logging.info(f"Data successfully written to {file_path}")
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
 
 
 def load_tokenizer_and_vllm(config, eos_token=None):
@@ -94,89 +90,89 @@ def load_tokenizer_and_vllm(config, eos_token=None):
     return tokenizer, llm
 
 
-def generate_teacher_response_batch(tokenizer, llm, data_list, config, batch_size=32):
-    full_path = config["dataset"]["template"]
+def build_template_text(template, examples):
+    messages = examples["_prompt"]
+    full_text = template.render(
+        messages=messages,
+        add_generation_prompt=True,
+        enable_thinking=False,
+        add_output=False
+    )
+    return full_text
+
+
+def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size=32):
+    full_path = config["data"]["template"]
     template_dir = os.path.dirname(full_path)
     template_file = os.path.basename(full_path)
     env = Environment(loader=FileSystemLoader(template_dir))
     template = env.get_template(template_file)
     outcomes = []
-    batches = [data_list[i:i + batch_size] for i in range(0, len(data_list), batch_size)]
-    for batch in tqdm(batches, desc="Generating responses"):
+    dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False)
+
+    for batch in tqdm(dataloader, desc="Generating responses"):
         new_batch = []
         for sample in batch:
-            message = {"role": "user", "content": sample}
-            full_text = template.render(
-                message = message,
-                add_generation_prompt = True,
-                add_output = False
-            )
-            new_batch.append(full_text)
+            new_batch.append(build_template_text(template, sample))
         outputs = llm.generate(
             new_batch,
             SamplingParams(
                 n = 1,
-                top_k = 1,
+                top_k = -1,
                 temperature = config["inference"]["temperature"],
                 seed = config["inference"]["seed"],
-                skip_special_tokens = False,
+                skip_special_tokens = True,
                 ignore_eos = False,
                 max_tokens = config["inference"]["max_new_tokens"]
             )
         )
         responses = [output.outputs[0].text for output in outputs]
-        gen_data = [{'instruction': batch[i], 'output': responses[i]} for i in range(len(batch))]
+        gen_data = [{'_prompt': batch[i]["_prompt"], '_response': responses[i]} for i in range(len(batch))]
         outcomes = outcomes + gen_data
-    write_data_to_json_file(outcomes, config["dataset"]["labeled_path"])
+    write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
 def generate_teacher_logits_batch(tokenizer, llm, data_list, config, batch_size=32):
-    full_path = config["dataset"]["template"]
+    full_path = config["data"]["template"]
     template_dir = os.path.dirname(full_path)
     template_file = os.path.basename(full_path)
     env = Environment(loader=FileSystemLoader(template_dir))
     template = env.get_template(template_file)
 
     batches = [data_list[i:i + batch_size] for i in range(0, len(data_list), batch_size)]
+    outcomes = []
     for batch in tqdm(batches, desc="Generating responses"):
         new_batch = []
         for sample in batch:
-            message={"role": "user", "content": sample}
-            full_text = template.render(
-                message=message,
-                add_generation_prompt=True,
-                add_output=False
-            )
-            new_batch.append(full_text)
+            new_batch.append(build_template_text(template, sample))
         
         outputs = llm.generate(
             new_batch,  # Pass the raw text directly
             SamplingParams(
                 n=1,
-                top_k=1,
+                top_k=-1,
                 temperature=config["inference"]["temperature"],
                 seed=config["inference"]["seed"],
-                skip_special_tokens=False,
-                ignore_eos=True,
+                skip_special_tokens=True,
+                ignore_eos=False,
                 max_tokens=config["inference"]["max_new_tokens"],
                 logprobs=config["inference"]["top_logits_num"],
             )
         )
         # Extract the generated logits
-        responses = [output.outputs[0].text for output in outputs]
         logits=[output.outputs[0].logprobs for output in outputs]
         for logit in logits:
             for pos in logit:
                 for k,v in pos.items():
                     pos[k]=math.exp(v.logprob)
         
-        with jsonlines.open(config["dataset"]["logits_path"], mode='a') as writer:
+        with jsonlines.open(config["data"]["infer_stage_output"], mode='a') as writer:
             for row in logits:
                 #for item in row:
                 writer.write(row)
 
 
-def generate_teacher_response_api(data_list, config):
+def generate_teacher_response_api(data_set, config):
     client = OpenAI(
         api_key = config["inference"]["api_key"],
         base_url = config["inference"]["base_url"]
@@ -184,21 +180,12 @@ def generate_teacher_response_api(data_list, config):
     models = client.models.list()
     model = models.data[0].id
     logging.info(model)
-    system_prompt = config["inference"]["system_prompt"]
     stream = config["inference"]["stream"]
     outcomes = []
-    for sample in tqdm(data_list, desc="Call remote model and generating responses"):
-        if system_prompt == "":
-            message = [
-                {'role': 'user', 'content': sample}
-            ]
-        else:
-            message = [
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': sample}
-            ]
+    for sample in tqdm(data_set, desc="Call remote model and generating responses"):
+        messages = sample["_prompt"]
         completion = client.chat.completions.create(
-            messages = message,
+            messages = messages,
             model = model,
             max_completion_tokens = config["inference"]["max_new_tokens"],
             stream = stream
@@ -210,23 +197,23 @@ def generate_teacher_response_api(data_list, config):
         else:
             result = completion.choices[0].message.content
             
-        outcomes.append({'instruction': sample, 'output': result})
-    write_data_to_json_file(outcomes, config["dataset"]["labeled_path"])
+        outcomes.append({'_prompt': messages, '_response': result})
+    write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
 def infer_with_teacher_model(config):
     logging.info('Generating distillation data from the teacher model!')
-    data_list = read_json_field(config["dataset"]["instruction_path"])
+    data_set = get_dataset(config["data"])
     try:
         job_type =  config["job_type"]
         if job_type == "kd_black_box_api":
-            generate_teacher_response_api(data_list, config)
+            generate_teacher_response_api(data_set["train"], config)
         elif job_type == "kd_black_box_local":
             tokenizer, llm = load_tokenizer_and_vllm(config)
-            generate_teacher_response_batch(tokenizer, llm, data_list, config)
+            generate_teacher_response_batch(tokenizer, llm, data_set["train"], config)
         elif job_type == "kd_white_box":
             tokenizer, llm = load_tokenizer_and_vllm(config)
-            generate_teacher_logits_batch(tokenizer, llm, data_list, config)
+            generate_teacher_logits_batch(tokenizer, llm, data_set["train"], config)
         else:
             logging.error(f"Invalid job type: {job_type}")
             raise ValueError(f"Invalid job type: {job_type}")

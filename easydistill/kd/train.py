@@ -19,9 +19,9 @@ import argparse
 import logging
 import os
 from jinja2 import Environment, BaseLoader, FileSystemLoader
-from datasets import load_dataset,Dataset
+from ..data.loader import get_dataset
 from typing import Optional, Dict, Union, List
-from datasets import Dataset
+from datasets import load_dataset
 from transformers import PreTrainedModel, PreTrainedTokenizerBase,AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from trl import SFTTrainer,SFTConfig
 import torch
@@ -71,8 +71,8 @@ class DistillSFTTrainer(SFTTrainer):
     def _compute_white_box_distillation_loss(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: Optional[torch.Tensor]):
         student_logits = student_logits[:, :self.max_seq_length, :]
         teacher_probs = teacher_logits[:, :student_logits.size(1), :student_logits.size(-1)]
-        mask = (labels != -100).float() if labels is not None else torch.ones_like(student_logits[:, :, 0])
-        
+        mask = (labels != -100).float() if labels[:, :student_logits.size(1), : student_logits.size(-1)] is not None else torch.ones_like(student_logits[:, :, 0])
+        mask = mask[:, :self.max_seq_length]
         if self.distillation_type == "forward_kld":
             # Forward KLD: student learns from teacher (original implementation)
             loss = F.kl_div(
@@ -137,10 +137,13 @@ class DistillSFTTrainer(SFTTrainer):
 def formatting_func(examples):
     env = Environment(loader=BaseLoader())
     try:
-        message = {"content": examples["instruction"],"output":examples["output"]}
+        messages = examples["_prompt"]
+        output = examples["_response"]
         full_text = template.render(
-            message=message,
-            add_generation_prompt=False,
+            messages=messages,
+            output=output,
+            add_generation_prompt=True,
+            enable_thinking=False,
             add_output=True
         )
         return full_text
@@ -150,8 +153,6 @@ def formatting_func(examples):
 
 
 def train(config):
-    dataset = load_dataset("json", data_files=config["dataset"]["labeled_path"])
-    
     student_tokenizer = AutoTokenizer.from_pretrained(
         config["models"]["student"], 
         trust_remote_code=True
@@ -162,7 +163,7 @@ def train(config):
     )
 
     global template
-    full_path = config["dataset"]["template"]
+    full_path = config["data"]["template"]
     template_dir = os.path.dirname(full_path)
     template_file = os.path.basename(full_path)
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -172,7 +173,8 @@ def train(config):
     try:
         job_type =  config["job_type"]
         if "kd_black_box" in job_type:
-            dataset = dataset.shuffle(seed=config["dataset"]["seed"])
+            dataset = load_dataset("json", data_files=config["data"]["infer_stage_output"])
+            dataset = dataset.shuffle(seed=config["data"]["seed"])
             trainer = SFTTrainer(
                 model=student_model,
                 processing_class=student_tokenizer,
@@ -181,9 +183,10 @@ def train(config):
                 formatting_func=formatting_func
             )
         elif "kd_white_box" in job_type:
+            dataset = get_dataset(config["data"])
             teacher_vocab_size=json.load(open(os.path.join(config["models"]["teacher"], 'config.json')))['vocab_size']
             trainer = DistillSFTTrainer(
-                logits_dir=config["dataset"]["logits_path"],
+                logits_dir=config["data"]["infer_stage_output"],
                 teacher_vocab_size=teacher_vocab_size,
                 kd_ratio=config["distillation"]["kd_ratio"], 
                 max_seq_length=config["distillation"]["max_seq_length"],
@@ -191,7 +194,7 @@ def train(config):
                 model=student_model,
                 processing_class=student_tokenizer,
                 args=training_arguments,
-                train_dataset=dataset["train"],
+                    train_dataset=dataset["train"],
                 formatting_func=formatting_func
             )
         else:

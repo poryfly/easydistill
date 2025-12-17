@@ -1,0 +1,43 @@
+{
+  "job_type": "kd_white_box",
+  "data": {
+    "dataset_dir": "/work_home/ljh/program/LLaMA-Factory-main/data",
+    "dataset": "train_long_v3",
+    "infer_stage_out": "train_long_v3_instruction.json",
+    "template" : "/opt/ai/input/prd_ai_center/train_project/ljh/program/xiongchenhui/llm_distill/config/chat_template/chat_template_qwen3_kd.jinja",
+    "seed": 42
+  },
+  "inference":{
+    "enable_chunked_prefill": true,
+    "seed": 777,
+    "gpu_memory_utilization": 0.9,
+    "temperature": 0.0,
+    "trust_remote_code": true,
+    "enforce_eager": false,
+    "max_model_len": 12000,
+    "max_new_tokens": 100,
+    "top_logits_num": 10
+  },
+  "distillation": {
+    "kd_ratio": 0.3,
+    "max_seq_length": 6000,
+    "distillation_type": "forward_kld"
+  },
+  "models": {
+    "teacher": "/work_home/ljh/program/xiongchenhui/llm_train/train_result/qwen3-4b-dpo",
+    "student": "/work_home/ljh/models/qwen3-0.6B"
+  },
+  "training": {
+    "output_dir": "/opt/ai/input/prd_ai_center/train_project/ljh/program/xiongchenhui/llm_distill/result/kd_white_model_router_v9",
+    "num_train_epochs": 6,
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 8,
+    "max_length":6000,
+    "save_steps": 1000,
+    "logging_steps": 1,
+    "learning_rate":1e-4,
+    "weight_decay": 0.05,
+    "warmup_ratio": 0.1,
+    "lr_scheduler_type": "cosine"
+  }
+}

@@ -90,14 +90,7 @@ def process(job_type, config):
         cmd_train = ' '.join(cmd_train)
         logging.info(f"Running command: {cmd_train}")
         run_cmd(cmd_train)
-    elif job_type in ["cot_eval_api"]:
-        cmd_eval=f"""python easydistill/eval/data_eval.py --config {config}"""
-        logging.info(f"Running command: {cmd_eval}")
-        run_cmd(cmd_eval)
-    elif job_type in ["mmcot_eval_api"]:
-        cmd_eval=f"""python easydistill/eval/mm_data_eval.py --config {config}"""
-        logging.info(f"Running command: {cmd_eval}")
-        run_cmd(cmd_eval)
+
     elif job_type in ['kd_black_box_api', 'kd_black_box_local', 'kd_white_box']:
         cmd_infer = [
             'python', os.path.join(script_dir, 'kd/infer.py'),
@@ -164,27 +157,6 @@ def process(job_type, config):
             run_cmd(cmd_train)
         else:
             logging.error("Infer failed, skipping training")
-
-    elif job_type in ['speckd_local']:
-        cmd_infer = [
-            'python', os.path.join(script_dir, 'speckd/infer.py'),
-            '--config', config
-        ]
-        cmd_infer = ' '.join(cmd_infer)
-        logging.info(f"Running command: {cmd_infer}")
-        infer_success = run_cmd(cmd_infer)
-
-        if infer_success:
-            cmd_train = [
-                'deepspeed',
-                os.path.join(script_dir, 'speckd/train.py'),
-                '--config', config
-            ]
-            cmd_train = ' '.join(cmd_train)
-            logging.info(f"Running command: {cmd_train}")
-            run_cmd(cmd_train)
-        else:
-            logging.error("Infer failed, skipping training")
     
     # Reinforcement Learning tasks
     elif job_type in ['rl_ppo', 'rl_grpo']:
@@ -234,15 +206,27 @@ def process(job_type, config):
     
     # Ranking and DPO tasks
     elif job_type.startswith('rank_'):
-        task_type = job_type.replace('rank_', '')
-        cmd = [
-            'python',
-            os.path.join(script_dir, f'rank/{task_type}.py'),
+        cmd_infer = [
+            'python', os.path.join(script_dir, 'rank/infer.py'),
             '--config', config
         ]
-        cmd = ' '.join(cmd)
-        logging.info(f"Running command: {cmd}")
-        run_cmd(cmd)
+        cmd_infer = ' '.join(cmd_infer)
+        logging.info(f"Running command: {cmd_infer}")
+        infer_success = run_cmd(cmd_infer)
+
+        if infer_success:
+            cmd_train = [
+                'accelerate', 'launch',
+                '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+                os.path.join(script_dir, 'rank/train.py'),
+                '--config', config
+            ]
+            cmd_train = ' '.join(cmd_train)
+            logging.info(f"Running command: {cmd_train}")
+            run_cmd(cmd_train)
+        else:
+            logging.error("Infer failed, skipping training")
+
     elif job_type in ["mmkd_rl_grounding"]:
         args=json.load(open(config))
 
