@@ -2,9 +2,9 @@
   "job_type": "kd_white_box",
   "accelerate_config": "/work_home/ljh/program/xiongchenhui/llm_distill/config/accelerate_config/muti_gpu.yaml",
   "data": {
-    "dataset_dir": "/work_home/ljh/program/LLaMA-Factory-main/data",
-    "dataset": "train_long_v3",
-    "infer_stage_out": "train_long_v3_instruction.json",
+    "dataset_dir": "/work_home/ljh/program/xiongchenhui/data",
+    "dataset": "sft_long_v3_train",
+    "infer_stage_output": "train_long_v3_instruction.json",
     "template" : "/work_home/ljh/program/xiongchenhui/llm_distill/config/chat_template/chat_template_qwen3_kd.jinja",
     "seed": 42
   },

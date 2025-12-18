@@ -71,7 +71,7 @@ class DistillSFTTrainer(SFTTrainer):
     def _compute_white_box_distillation_loss(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: Optional[torch.Tensor]):
         student_logits = student_logits[:, :self.max_seq_length, :]
         teacher_probs = teacher_logits[:, :student_logits.size(1), :student_logits.size(-1)]
-        mask = (labels != -100).float() if labels[:, :student_logits.size(1), : student_logits.size(-1)] is not None else torch.ones_like(student_logits[:, :, 0])
+        mask = (labels != -100).float() if labels is not None else torch.ones_like(student_logits[:, :, 0])
         mask = mask[:, :self.max_seq_length]
         if self.distillation_type == "forward_kld":
             # Forward KLD: student learns from teacher (original implementation)
@@ -138,7 +138,8 @@ def formatting_func(examples):
     env = Environment(loader=BaseLoader())
     try:
         messages = examples["_prompt"]
-        output = examples["_response"]
+        # response is list of one element for sft
+        output = examples["_response"][0]["content"]
         full_text = template.render(
             messages=messages,
             output=output,
@@ -194,7 +195,7 @@ def train(config):
                 model=student_model,
                 processing_class=student_tokenizer,
                 args=training_arguments,
-                    train_dataset=dataset["train"],
+                train_dataset=dataset["train"],
                 formatting_func=formatting_func
             )
         else:

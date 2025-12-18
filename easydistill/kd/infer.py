@@ -108,12 +108,14 @@ def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size
     env = Environment(loader=FileSystemLoader(template_dir))
     template = env.get_template(template_file)
     outcomes = []
-    dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
 
     for batch in tqdm(dataloader, desc="Generating responses"):
         new_batch = []
         for sample in batch:
             new_batch.append(build_template_text(template, sample))
+        if len(new_batch) == 0:
+            continue
         outputs = llm.generate(
             new_batch,
             SamplingParams(
@@ -132,16 +134,16 @@ def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
-def generate_teacher_logits_batch(tokenizer, llm, data_list, config, batch_size=32):
+def generate_teacher_logits_batch(tokenizer, llm, data_set, config, batch_size=32):
     full_path = config["data"]["template"]
     template_dir = os.path.dirname(full_path)
     template_file = os.path.basename(full_path)
     env = Environment(loader=FileSystemLoader(template_dir))
     template = env.get_template(template_file)
 
-    batches = [data_list[i:i + batch_size] for i in range(0, len(data_list), batch_size)]
-    outcomes = []
-    for batch in tqdm(batches, desc="Generating responses"):
+    # collate_fn配置很关键，否则字典合并了
+    dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
+    for batch in tqdm(dataloader, desc="Generating responses"):
         new_batch = []
         for sample in batch:
             new_batch.append(build_template_text(template, sample))

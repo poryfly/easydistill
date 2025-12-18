@@ -119,7 +119,7 @@ class SharegptDatasetConverter(DatasetConverter):
         broken_data = False
         for turn_idx, message in enumerate(messages):
             if message[self.dataset_attr.role_tag] not in accept_tags[turn_idx % 2]:
-                logger.warning_rank0(f"Invalid role tag in {messages}.")
+                logger.warning(f"Invalid role tag in {messages}.")
                 broken_data = True
                 break
 
@@ -183,6 +183,7 @@ class SharegptDatasetConverter(DatasetConverter):
             "_system": system,
             "_tools": example[self.dataset_attr.tools] if self.dataset_attr.tools else "",
         }
+
         return output
 
 
@@ -246,18 +247,18 @@ class OpenAIDatasetConverter(DatasetConverter):
         accept_tags = (odd_tags, even_tags)
         for turn_idx, message in enumerate(aligned_messages):
             if message["role"] not in accept_tags[turn_idx % 2]:
-                logger.warning_rank0(f"Invalid role tag in {messages}.")
+                logger.warning(f"Invalid role tag in {messages}.")
                 broken_data = True
                 break
 
         if (not self.dataset_attr.ranking and len(aligned_messages) % 2 != 0) or (
             self.dataset_attr.ranking and len(aligned_messages) % 2 == 0
         ):
-            logger.warning_rank0(f"Invalid message count in {messages}.")
+            logger.warning(f"Invalid message count in {messages}.")
             broken_data = True
 
         if broken_data:
-            logger.warning_rank0("Skipping this abnormal example.")
+            logger.warning("Skipping this abnormal example.")
             prompt, response = [], []
         elif self.dataset_attr.kto_tag and isinstance(example[self.dataset_attr.kto_tag], bool):  # kto example
             prompt = aligned_messages[:-1]

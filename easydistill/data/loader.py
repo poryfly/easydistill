@@ -133,10 +133,11 @@ def _get_merged_dataset(
         return merge_dataset(list(datasets.values()), data_args, seed=data_args.seed)
 
 def get_dataset(
-    data_args: "DataArguments",
+    data_conf: "dict",
 ) -> "DatasetDict":
     r"""Get the train dataset and optionally gets the evaluation dataset."""
     # Load tokenized dataset if path exists
+    data_args = DataArguments(**data_conf)
     dataset = _get_merged_dataset(data_args.dataset, data_args)
     # just train
     return DatasetDict({"train":dataset})
