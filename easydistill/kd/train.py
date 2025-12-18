@@ -19,7 +19,7 @@ import argparse
 import logging
 import os
 from jinja2 import Environment, BaseLoader, FileSystemLoader
-from ..data.loader import get_dataset
+from easydistill.data.loader import get_dataset
 from typing import Optional, Dict, Union, List
 from datasets import load_dataset
 from transformers import PreTrainedModel, PreTrainedTokenizerBase,AutoModelForCausalLM, AutoTokenizer, TrainingArguments

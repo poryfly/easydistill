@@ -26,9 +26,9 @@ from vllm import LLM, SamplingParams
 from tqdm import tqdm
 from openai import OpenAI
 import math
-from ..data.loader import get_dataset
+from easydistill.data.loader import get_dataset
 from torch.utils.data import DataLoader
-from ..data.data_utils import write_data_to_json_file
+from easydistill.data.data_utils import write_data_to_json_file
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
