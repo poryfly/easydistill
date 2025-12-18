@@ -271,7 +271,7 @@ def main():
     job_type = config["job_type"]
     if "accelerate_config" not in config:
         logging.error("accelerate_config must need, the example in config/accelerate_config/muti_gpu.yaml")
-        return 
+        return
     accelerate_config = config["accelerate_config"]
     process(job_type, accelerate_config, config_path)
 
