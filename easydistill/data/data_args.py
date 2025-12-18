@@ -139,8 +139,8 @@ class DataArguments:
         metadata={"help": "rand seed key"},
     )
 
-    label_data_file: Optional[str] = field(
-        default=None,
+    infer_stage_output: Optional[str] = field(
+        default="infer_stage_output.json",
         metadata={"help": "The name of dataset(s) to use for evaluation. Use commas to separate multiple datasets."},
     )
 
