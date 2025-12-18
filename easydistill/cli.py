@@ -75,7 +75,7 @@ def run_cmd(cmd):
         logging.error(f"Unexpected error running command: {e}")
         return False
 
-def process(job_type, config):
+def process(job_type, accelerate_config, config):
     if not os.path.isabs(config):
         config = os.path.join(script_dir, config)
     
@@ -83,7 +83,7 @@ def process(job_type, config):
     if job_type in ['kd_black_box_train_only', 'kd_white_box_train_only']:
         cmd_train = [
             'accelerate', 'launch',
-            '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+            '--config_file', accelerate_config,
             os.path.join(script_dir, 'kd/train.py'),
             '--config', config
         ]
@@ -103,7 +103,7 @@ def process(job_type, config):
         if infer_success:
             cmd_train = [
                 'accelerate', 'launch',
-                '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+                '--config_file', accelerate_config,
                 os.path.join(script_dir, 'kd/train.py'),
                 '--config', config
             ]
@@ -126,7 +126,7 @@ def process(job_type, config):
         if infer_success:
             cmd_train = [
                 'accelerate', 'launch',
-                '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+                '--config_file', accelerate_config,
                 os.path.join(script_dir, 'mmkd/train.py'),
                 '--config', config
             ]
@@ -148,7 +148,7 @@ def process(job_type, config):
         if infer_success:
             cmd_train = [
                 'accelerate', 'launch',
-                '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+                '--config_file', accelerate_config,
                 os.path.join(script_dir, 'agentkd/train.py'),
                 '--config', config
             ]
@@ -162,7 +162,7 @@ def process(job_type, config):
     elif job_type in ['rl_ppo', 'rl_grpo']:
         cmd = [
             'accelerate', 'launch',
-            '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+            '--config_file', accelerate_config,
             os.path.join(script_dir, f'rl/{job_type.split("_")[1]}.py'),
             '--config', config
         ]
@@ -217,7 +217,7 @@ def process(job_type, config):
         if infer_success:
             cmd_train = [
                 'accelerate', 'launch',
-                '--config_file', os.path.join(parent_dir, 'configs/accelerate_config/muti_gpu.yaml'),
+                '--config_file', accelerate_config,
                 os.path.join(script_dir, 'rank/train.py'),
                 '--config', config
             ]
@@ -269,7 +269,11 @@ def main():
     config_path = args.config
     config = json.load(open(config_path))
     job_type = config["job_type"]
-    process(job_type, config_path)  
+    if "accelerate_config" not in config:
+        logging.error("accelerate_config must need, the example in config/accelerate_config/muti_gpu.yaml")
+        return 
+    accelerate_config = config["accelerate_config"]
+    process(job_type, accelerate_config, config_path)
 
 if __name__ == '__main__':
     main()
