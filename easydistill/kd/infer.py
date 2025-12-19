@@ -28,7 +28,7 @@ from openai import OpenAI
 import math
 from easydistill.data.loader import get_dataset
 from torch.utils.data import DataLoader
-from easydistill.data.data_utils import write_data_to_json_file
+from easydistill.data.data_utils import write_data_to_json_file, Role
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -129,7 +129,7 @@ def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size
             )
         )
         responses = [output.outputs[0].text for output in outputs]
-        gen_data = [{'_prompt': batch[i]["_prompt"], '_response': responses[i]} for i in range(len(batch))]
+        gen_data = [{'_prompt': batch[i]["_prompt"], '_response': [{"role": Role.ASSISTANT.value, "content": responses[i]}]} for i in range(len(batch))]
         outcomes = outcomes + gen_data
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
@@ -199,7 +199,7 @@ def generate_teacher_response_api(data_set, config):
         else:
             result = completion.choices[0].message.content
             
-        outcomes.append({'_prompt': messages, '_response': result})
+        outcomes.append({'_prompt': messages, '_response': [{"role": Role.ASSISTANT.value, "content": result}]})
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
