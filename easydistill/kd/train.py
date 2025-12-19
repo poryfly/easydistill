@@ -19,10 +19,10 @@ import argparse
 import logging
 import os
 from jinja2 import Environment, BaseLoader, FileSystemLoader
-from easydistill.data.loader import get_dataset
+from easydistill.data.loader import load_dataset_from_json
 from typing import Optional, Dict, Union, List
-from datasets import load_dataset
-from transformers import PreTrainedModel, PreTrainedTokenizerBase,AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+from easydistill.data.data_utils import DataField, Role
+from transformers import PreTrainedModel,AutoModelForCausalLM, AutoTokenizer
 from trl import SFTTrainer,SFTConfig
 import torch
 import jsonlines
@@ -134,19 +134,15 @@ class DistillSFTTrainer(SFTTrainer):
         return (total_loss, outputs) if return_outputs else total_loss
 
 
-def formatting_func(examples):
-    env = Environment(loader=BaseLoader())
+def formatting_func(tokenizer, examples):
     try:
-        messages = examples["_prompt"]
-        # response is list of one element for sft
-        output = examples["_response"][0]["content"]
-        full_text = template.render(
-            messages=messages,
-            output=output,
-            add_generation_prompt=True,
-            enable_thinking=False,
-            add_output=True
-        )
+        messages = examples[DataField.MESSAGES]
+        last_message = messages[-1]
+        if last_message[DataField.ROLE] == Role.ASSISTANT.value:
+            messages = messages[:-1]
+        else:
+            messages = messages
+        full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         return full_text
     except Exception as e:
         logging.warning(f"Error processing sample: {str(e)}")
@@ -163,28 +159,20 @@ def train(config):
         trust_remote_code=True
     )
 
-    global template
-    full_path = config["data"]["template"]
-    template_dir = os.path.dirname(full_path)
-    template_file = os.path.basename(full_path)
-    env = Environment(loader=FileSystemLoader(template_dir))
-    template = env.get_template(template_file)
     training_arguments = SFTConfig(**config["training"])
     
     try:
         job_type =  config["job_type"]
         if "kd_black_box" in job_type:
-            dataset = load_dataset("json", data_files=config["data"]["infer_stage_output"])
+            dataset = load_dataset_from_json(config["data"]["infer_stage_output"])
             dataset = dataset.shuffle(seed=config["data"]["seed"])
             trainer = SFTTrainer(
                 model=student_model,
                 processing_class=student_tokenizer,
                 args=training_arguments,
-                train_dataset=dataset["train"],
-                formatting_func=formatting_func
-            )
+                train_dataset=dataset            )
         elif "kd_white_box" in job_type:
-            dataset = get_dataset(config["data"])
+            dataset = load_dataset_from_json(config["data"]["train_data_path"])
             teacher_vocab_size=json.load(open(os.path.join(config["models"]["teacher"], 'config.json')))['vocab_size']
             trainer = DistillSFTTrainer(
                 logits_dir=config["data"]["infer_stage_output"],
@@ -195,8 +183,7 @@ def train(config):
                 model=student_model,
                 processing_class=student_tokenizer,
                 args=training_arguments,
-                train_dataset=dataset["train"],
-                formatting_func=formatting_func
+                train_dataset=dataset
             )
         else:
             logging.error(f"Invalid job type: {job_type}")

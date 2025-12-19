@@ -26,9 +26,9 @@ from vllm import LLM, SamplingParams
 from tqdm import tqdm
 from openai import OpenAI
 import math
-from easydistill.data.loader import get_dataset
+from easydistill.data.loader import load_dataset_from_json
 from torch.utils.data import DataLoader
-from easydistill.data.data_utils import write_data_to_json_file, Role
+from easydistill.data.data_utils import write_data_to_json_file, Role, DataField
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -90,30 +90,25 @@ def load_tokenizer_and_vllm(config, eos_token=None):
     return tokenizer, llm
 
 
-def build_template_text(template, examples):
-    messages = examples["_prompt"]
-    full_text = template.render(
-        messages=messages,
-        add_generation_prompt=True,
-        enable_thinking=False,
-        add_output=False
-    )
+def build_template_text(tokenizer, examples):
+    messages = examples[DataField.MESSAGES]
+    last_message = messages[-1]
+    if last_message[DataField.ROLE] == Role.ASSISTANT.value:
+        messages = messages[:-1]
+    else:
+        messages = messages
+    full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     return full_text
 
 
 def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size=32):
-    full_path = config["data"]["template"]
-    template_dir = os.path.dirname(full_path)
-    template_file = os.path.basename(full_path)
-    env = Environment(loader=FileSystemLoader(template_dir))
-    template = env.get_template(template_file)
     outcomes = []
     dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
 
     for batch in tqdm(dataloader, desc="Generating responses"):
         new_batch = []
         for sample in batch:
-            new_batch.append(build_template_text(template, sample))
+            new_batch.append(build_template_text(tokenizer, sample))
         if len(new_batch) == 0:
             continue
         outputs = llm.generate(
@@ -129,24 +124,18 @@ def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size
             )
         )
         responses = [output.outputs[0].text for output in outputs]
-        gen_data = [{'_prompt': batch[i]["_prompt"], '_response': [{"role": Role.ASSISTANT.value, "content": responses[i]}]} for i in range(len(batch))]
+        gen_data = [{DataField.MESSAGES: batch[i][DataField.MESSAGES].append({DataField.ROLE: Role.ASSISTANT.value, DataField.CONTENT: responses[i]})} for i in range(len(batch))]
         outcomes = outcomes + gen_data
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
 def generate_teacher_logits_batch(tokenizer, llm, data_set, config, batch_size=32):
-    full_path = config["data"]["template"]
-    template_dir = os.path.dirname(full_path)
-    template_file = os.path.basename(full_path)
-    env = Environment(loader=FileSystemLoader(template_dir))
-    template = env.get_template(template_file)
-
     # collate_fn配置很关键，否则字典合并了
     dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
     for batch in tqdm(dataloader, desc="Generating responses"):
         new_batch = []
         for sample in batch:
-            new_batch.append(build_template_text(template, sample))
+            new_batch.append(build_template_text(tokenizer, sample))
         
         outputs = llm.generate(
             new_batch,  # Pass the raw text directly
@@ -185,7 +174,7 @@ def generate_teacher_response_api(data_set, config):
     stream = config["inference"]["stream"]
     outcomes = []
     for sample in tqdm(data_set, desc="Call remote model and generating responses"):
-        messages = sample["_prompt"]
+        messages = sample[DataField.MESSAGES]
         completion = client.chat.completions.create(
             messages = messages,
             model = model,
@@ -198,24 +187,25 @@ def generate_teacher_response_api(data_set, config):
                 result += chunk.choices[0].delta.content
         else:
             result = completion.choices[0].message.content
-            
-        outcomes.append({'_prompt': messages, '_response': [{"role": Role.ASSISTANT.value, "content": result}]})
+
+        messages.append({{DataField.ROLE: Role.ASSISTANT.value, DataField.CONTENT: result}})
+        outcomes.append({DataField.MESSAGES: messages})
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
 def infer_with_teacher_model(config):
     logging.info('Generating distillation data from the teacher model!')
-    data_set = get_dataset(config["data"])
+    data_set = load_dataset_from_json(config["data"]["train_data_path"])
     try:
         job_type =  config["job_type"]
         if job_type == "kd_black_box_api":
-            generate_teacher_response_api(data_set["train"], config)
+            generate_teacher_response_api(data_set, config)
         elif job_type == "kd_black_box_local":
             tokenizer, llm = load_tokenizer_and_vllm(config)
-            generate_teacher_response_batch(tokenizer, llm, data_set["train"], config)
+            generate_teacher_response_batch(tokenizer, llm, data_set, config)
         elif job_type == "kd_white_box":
             tokenizer, llm = load_tokenizer_and_vllm(config)
-            generate_teacher_logits_batch(tokenizer, llm, data_set["train"], config)
+            generate_teacher_logits_batch(tokenizer, llm, data_set, config)
         else:
             logging.error(f"Invalid job type: {job_type}")
             raise ValueError(f"Invalid job type: {job_type}")

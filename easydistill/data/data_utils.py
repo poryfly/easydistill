@@ -21,6 +21,7 @@ from datasets import DatasetDict, concatenate_datasets, interleave_datasets
 
 import logging
 
+from projects.SCoRe.RL.verl.workers.rollout.schemas import Message
 
 if TYPE_CHECKING:
     from datasets import Dataset, IterableDataset
@@ -41,6 +42,15 @@ class Role(str, Enum):
     SYSTEM = "system"
     FUNCTION = "function"
     OBSERVATION = "observation"
+
+@unique
+class DataField(str, Enum):
+    MESSAGES = "messages"
+    INSTRUCTION = "instruction"
+    INPUT = "input"
+    OUTPUT = "output"
+    ROLE = "role"
+    CONTENT = "content"
 
 
 class DatasetModule(TypedDict):
