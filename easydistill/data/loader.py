@@ -20,7 +20,7 @@ from datasets import Dataset, load_dataset, load_from_disk, DatasetDict
 
 import logging
 import ijson
-from .data_utils import DataField, Role
+from easydistill.data.data_utils import DataField, Role
 
 def load_dataset_from_json(
     data_path: str) -> Dataset:

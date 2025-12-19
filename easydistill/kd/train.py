@@ -18,9 +18,8 @@ import json
 import argparse
 import logging
 import os
-from jinja2 import Environment, BaseLoader, FileSystemLoader
 from easydistill.data.loader import load_dataset_from_json
-from typing import Optional, Dict, Union, List
+from typing import Optional, Dict
 from easydistill.data.data_utils import DataField, Role
 from transformers import PreTrainedModel,AutoModelForCausalLM, AutoTokenizer
 from trl import SFTTrainer,SFTConfig

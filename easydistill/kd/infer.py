@@ -18,10 +18,7 @@ import json, jsonlines
 import argparse
 import torch
 import logging
-import os
-from jinja2 import Environment, FileSystemLoader
-from pyexpat.errors import messages
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 from tqdm import tqdm
 from openai import OpenAI
@@ -132,6 +129,7 @@ def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size
 def generate_teacher_logits_batch(tokenizer, llm, data_set, config, batch_size=32):
     # collate_fn配置很关键，否则字典合并了
     dataloader = DataLoader(data_set, batch_size=batch_size, shuffle=False, collate_fn=lambda x: x)
+    all_logits = []
     for batch in tqdm(dataloader, desc="Generating responses"):
         new_batch = []
         for sample in batch:
@@ -156,11 +154,10 @@ def generate_teacher_logits_batch(tokenizer, llm, data_set, config, batch_size=3
             for pos in logit:
                 for k,v in pos.items():
                     pos[k]=math.exp(v.logprob)
-        
-        with jsonlines.open(config["data"]["infer_stage_output"], mode='a') as writer:
-            for row in logits:
-                #for item in row:
-                writer.write(row)
+        all_logits = all_logits + logits
+    with jsonlines.open(config["data"]["infer_stage_output"], mode='w') as writer:
+        for row in all_logits:
+            writer.write(row)
 
 
 def generate_teacher_response_api(data_set, config):
