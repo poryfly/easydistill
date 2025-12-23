@@ -3,5 +3,4 @@ transformers-stream-generator==0.0.5
 trl==0.17.0
 tokenizers==0.21.1
 vllm==0.8.5
-openai
-jinja2
+openai==2.6.1

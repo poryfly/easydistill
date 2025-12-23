@@ -12,13 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from typing import TYPE_CHECKING, Literal, Optional, Union
+from datasets import Dataset
 
-import numpy as np
-from datasets import Dataset, load_dataset, load_from_disk, DatasetDict
-
-import logging
 import ijson
 from easydistill.data.data_utils import DataField, Role
 
@@ -31,11 +26,11 @@ def load_dataset_from_json(
         for item in ijson.items(f, 'item'):
             if DataField.INSTRUCTION in item:
                 messages = [
-                    {DataField.ROLE: Role.SYSTEM, DataField.CONTENT: item[DataField.INSTRUCTION]},
-                    {DataField.ROLE: Role.USER, DataField.CONTENT: item[DataField.INPUT]}
+                    {DataField.ROLE: Role.SYSTEM.value, DataField.CONTENT: item[DataField.INSTRUCTION]},
+                    {DataField.ROLE: Role.USER.value, DataField.CONTENT: item[DataField.INPUT]}
                 ]
                 if DataField.OUTPUT in item:
-                    messages.append({DataField.ROLE: Role.ASSISTANT, DataField.CONTENT: item[DataField.OUTPUT]})
+                    messages.append({DataField.ROLE: Role.ASSISTANT.value, DataField.CONTENT: item[DataField.OUTPUT]})
             elif DataField.MESSAGES in item:
                 messages = item[DataField.MESSAGES]
             all_data.append({DataField.MESSAGES:messages})

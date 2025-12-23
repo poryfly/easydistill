@@ -94,9 +94,19 @@ def build_template_text(tokenizer, examples):
         messages = messages[:-1]
     else:
         messages = messages
-    full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
     return full_text
 
+
+def update_label_messages(messages, output):
+    last_message = messages[-1]
+    if last_message[DataField.ROLE] == Role.ASSISTANT.value:
+        messages = messages[:-1]
+    else:
+        messages = messages
+
+    messages.append({DataField.ROLE: Role.ASSISTANT.value, DataField.CONTENT: output})
+    return messages
 
 def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size=32):
     outcomes = []
@@ -121,7 +131,10 @@ def generate_teacher_response_batch(tokenizer, llm, data_set, config, batch_size
             )
         )
         responses = [output.outputs[0].text for output in outputs]
-        gen_data = [{DataField.MESSAGES: batch[i][DataField.MESSAGES].append({DataField.ROLE: Role.ASSISTANT.value, DataField.CONTENT: responses[i]})} for i in range(len(batch))]
+        gen_data = []
+        for i in range(len(batch)):
+            new_msg = update_label_messages(batch[i][DataField.MESSAGES], responses[i])
+            gen_data.append({DataField.MESSAGES: new_msg})
         outcomes = outcomes + gen_data
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
@@ -185,8 +198,8 @@ def generate_teacher_response_api(data_set, config):
         else:
             result = completion.choices[0].message.content
 
-        messages.append({{DataField.ROLE: Role.ASSISTANT.value, DataField.CONTENT: result}})
-        outcomes.append({DataField.MESSAGES: messages})
+        new_msg = update_label_messages(messages, result)
+        outcomes.append({DataField.MESSAGES: new_msg})
     write_data_to_json_file(outcomes, config["data"]["infer_stage_output"])
 
 
